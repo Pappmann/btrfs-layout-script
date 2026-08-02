@@ -1,0 +1,14 @@
+[Unit]
+Description=Regenerate grub-btrfs after Timeshift metadata changes
+After=grub-btrfsd.service
+Wants=grub-btrfsd.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/timeshift-grub-btrfs-sync
+ExecStart=/usr/local/sbin/timeshift-grub-btrfs-sync.sh
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

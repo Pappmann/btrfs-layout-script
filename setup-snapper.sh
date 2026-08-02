@@ -99,7 +99,7 @@ fi
 ROOT_SRC=$(findmnt -no SOURCE / || true)
 if [[ -z "$ROOT_SRC" || "$ROOT_SRC" != *"["* ]]; then
   echo "FEHLER: / läuft nicht von einem benannten Subvolume (aktuell: ${ROOT_SRC:-unbekannt})." >&2
-  echo "Bitte zuerst layout-scripts/btrfs-layout-script/setup-btrfs.sh ausführen." >&2
+  echo "Bitte zuerst debian-btrfs/layout-script/setup-btrfs.sh ausführen." >&2
   exit 1
 fi
 
@@ -286,7 +286,8 @@ install_apt_hooks() {
   local pre_script="/usr/local/sbin/snapper-apt-pre"
   local post_script="/usr/local/sbin/snapper-apt-post"
   local hook_conf="/etc/apt/apt.conf.d/80snapper"
-  local marker="# Managed by layout-scripts/snapper-layout-script"
+  local marker="# Managed by debian-btrfs/layout-script setup-snapper.sh"
+  local legacy_marker="# Managed by layout-scripts/snapper-layout-script"
   local hook_content
   hook_content=$(printf '%s\nDPkg::Pre-Invoke {"%s";};\nDPkg::Post-Invoke {"%s";};\n' \
     "$marker" "$pre_script" "$post_script")
@@ -302,7 +303,7 @@ install_apt_hooks() {
       echo ">>> apt-Hooks für snapper sind bereits aktuell ($hook_conf), überspringe."
       return 0
     fi
-    if ! grep -Fqx "$marker" "$hook_conf"; then
+    if ! grep -Fqx "$marker" "$hook_conf" && ! grep -Fqx "$legacy_marker" "$hook_conf"; then
       echo "FEHLER: $hook_conf existiert, ist aber nicht von diesem Skript verwaltet." >&2
       echo "Bitte manuell prüfen oder verschieben, damit keine fremden apt-Hooks überschrieben werden." >&2
       exit 1

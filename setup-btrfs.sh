@@ -156,7 +156,7 @@ offer_optional_btrfs_tools() {
   echo ">>> Installiere optionale APT-Pakete: ${selected_tools[*]}"
   if apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y "${selected_tools[@]}"; then
     echo ">>> Optionale Tools installiert. Bitte Timeshift/Snapper/btrbk/btrfsmaintenance bei Bedarf manuell konfigurieren."
-    echo ">>> Hinweis grub-btrfs: zeigt Snapshots erst im GRUB-Menü an, wenn zusaetzlich ein Snapshot-Manager (Timeshift/Snapper) konfiguriert und der Dienst grub-btrfsd aktiviert ist."
+    echo ">>> Hinweis grub-btrfs: für die vollständige Timeshift-Integration danach setup-timeshift.sh ausführen; für Snapper setup-snapper.sh verwenden."
   else
     echo "WARNUNG: Optionale Tool-Installation ist fehlgeschlagen. Das Btrfs-Setup wird fortgesetzt." >&2
   fi
