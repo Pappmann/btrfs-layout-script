@@ -265,7 +265,7 @@ En un sistema Debian (o basado en Debian) cuyo `/` ya está en un subvolumen Btr
 - Establece una política de línea de tiempo al estilo SUSE en `/etc/snapper/configs/root` (`TIMELINE_CREATE`, `TIMELINE_CLEANUP`, `NUMBER_CLEANUP` y valores conservadores de `TIMELINE_LIMIT_*` para hora/día/semana/mes/año).
 - Instala hooks propios de `apt` (`DPkg::Pre-Invoke`/`DPkg::Post-Invoke`) que crean un par de instantáneas pre/post en cada cambio de paquete — a diferencia del plugin `zypp` de openSUSE, Debian/Ubuntu no incluye esta integración, así que el script escribe pequeños scripts auxiliares para ello.
 - Activa los temporizadores systemd `snapper-timeline.timer` y `snapper-cleanup.timer`.
-- Instala `grub-btrfs` si está disponible en los repositorios APT configurados, activa `grub-btrfsd` y ejecuta `update-grub` (o `grub-mkconfig`) para que las instantáneas aparezcan como entradas arrancables de solo lectura en el menú de GRUB. Si el paquete no está disponible, la configuración de Snapper continúa sin integración en el menú de GRUB.
+- Instala `grub-btrfs` si está disponible en los repositorios APT configurados, configura `grub-btrfsd` para vigilar el directorio `/.snapshots` de Snapper y ejecuta `update-grub` (o `grub-mkconfig`) para que las instantáneas aparezcan como entradas arrancables de solo lectura en el menú de GRUB. Timeshift no es necesario para este recorrido. Si el paquete no está disponible, la configuración de Snapper continúa sin integración en el menú de GRUB.
 
 ### Limitaciones
 
@@ -302,7 +302,10 @@ El script instalará los siguientes paquetes si faltan: `snapper`, `inotify-tool
    snapper list-configs
    snapper create -d test && snapper list && snapper delete <número>
    systemctl status snapper-timeline.timer snapper-cleanup.timer grub-btrfsd
+   systemctl cat grub-btrfsd.service
    ```
+
+   En una configuración solo con Snapper, el `ExecStart` efectivo debe contener `grub-btrfsd --syslog /.snapshots` y no debe contener `--timeshift-auto`. `setup-snapper.sh` y `setup-timeshift.sh` gestionan el mismo drop-in; ejecuta el script correspondiente al gestor de snapshots elegido.
 
    Instalar/eliminar un paquete pequeño para confirmar que los hooks de `apt` crean un par de instantáneas pre/post, y reiniciar para confirmar que el menú de GRUB muestra un submenú de instantáneas.
 

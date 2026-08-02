@@ -264,7 +264,7 @@ On a Debian (or Debian-based) system with `/` already on a named Btrfs subvolume
 - Sets a SUSE-like timeline policy in `/etc/snapper/configs/root` (`TIMELINE_CREATE`, `TIMELINE_CLEANUP`, `NUMBER_CLEANUP`, and conservative `TIMELINE_LIMIT_*` values for hourly/daily/weekly/monthly/yearly).
 - Installs custom `apt` hooks (`DPkg::Pre-Invoke`/`DPkg::Post-Invoke`) that create a paired pre/post snapshot around every package change — Debian/Ubuntu, unlike openSUSE's `zypp` plugin, doesn't ship this integration, so the script writes small wrapper scripts for it.
 - Enables the `snapper-timeline.timer` and `snapper-cleanup.timer` systemd timers.
-- Installs `grub-btrfs` if it is available from the configured APT repositories, enables `grub-btrfsd`, and runs `update-grub` (or `grub-mkconfig`) so snapshots show up as bootable, read-only entries in the GRUB menu. If the package is unavailable, Snapper setup continues without GRUB menu integration.
+- Installs `grub-btrfs` if it is available from the configured APT repositories, configures `grub-btrfsd` to watch Snapper's `/.snapshots` directory, and runs `update-grub` (or `grub-mkconfig`) so snapshots show up as bootable, read-only entries in the GRUB menu. Timeshift is not required for this path. If the package is unavailable, Snapper setup continues without GRUB menu integration.
 
 ### Limitations
 
@@ -301,7 +301,10 @@ The script will install the following packages if missing: `snapper`, `inotify-t
    snapper list-configs
    snapper create -d test && snapper list && snapper delete <number>
    systemctl status snapper-timeline.timer snapper-cleanup.timer grub-btrfsd
+   systemctl cat grub-btrfsd.service
    ```
+
+   For a Snapper-only setup, the effective `ExecStart` must contain `grub-btrfsd --syslog /.snapshots` and must not contain `--timeshift-auto`. `setup-snapper.sh` and `setup-timeshift.sh` manage the same drop-in; run the setup script for the snapshot manager you selected.
 
    Install/remove a small package to confirm the `apt` hooks create a pre/post snapshot pair, and reboot to confirm the GRUB menu shows a snapshot submenu.
 

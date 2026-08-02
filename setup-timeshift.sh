@@ -10,6 +10,7 @@ TIMESHIFT_CONFIG=/etc/timeshift/timeshift.json
 SYNC_CONFIG=/etc/default/timeshift-grub-btrfs-sync
 SYNC_UNIT=/etc/systemd/system/timeshift-grub-btrfs-sync.service
 SYNC_HELPER=/usr/local/sbin/timeshift-grub-btrfs-sync.sh
+GRUB_BTRFSD_DROPIN=/etc/systemd/system/grub-btrfsd.service.d/90-layout-script.conf
 
 usage() {
   cat <<'EOF'
@@ -48,6 +49,44 @@ require_command() {
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "FEHLER: Benötigtes Kommando '$command_name' fehlt. $hint" >&2
     exit 1
+  fi
+}
+
+configure_grub_btrfsd() {
+  local dropin_dir grub_btrfsd_bin
+
+  grub_btrfsd_bin=$(command -v grub-btrfsd)
+  if ! systemctl list-unit-files grub-btrfsd.service 2>/dev/null | grep -q '^grub-btrfsd\.service'; then
+    echo "FEHLER: grub-btrfsd.service wurde trotz installiertem grub-btrfs nicht gefunden." >&2
+    exit 1
+  fi
+
+  if [[ -d "$GRUB_BTRFSD_DROPIN" || -L "$GRUB_BTRFSD_DROPIN" ]]; then
+    echo "FEHLER: Drop-in-Ziel ist kein verwaltbares normales File: $GRUB_BTRFSD_DROPIN" >&2
+    exit 1
+  fi
+  if [[ -e "$GRUB_BTRFSD_DROPIN" ]] && ! grep -Eq '^# Managed by debian-btrfs/layout-script setup-(snapper|timeshift)\.sh$' "$GRUB_BTRFSD_DROPIN"; then
+    echo "FEHLER: Vorhandenes fremdes grub-btrfsd-Drop-in wird nicht überschrieben: $GRUB_BTRFSD_DROPIN" >&2
+    echo "Bitte das Drop-in prüfen oder entfernen und setup-timeshift.sh danach erneut ausführen." >&2
+    exit 1
+  fi
+
+  dropin_dir=$(dirname "$GRUB_BTRFSD_DROPIN")
+  install -d -m 0755 "$dropin_dir"
+  cat > "$GRUB_BTRFSD_DROPIN" <<EOF
+# Managed by debian-btrfs/layout-script setup-timeshift.sh
+[Service]
+ExecStart=
+ExecStart=$grub_btrfsd_bin --syslog --timeshift-auto
+EOF
+
+  echo ">>> Konfiguriere grub-btrfsd für Timeshift (--timeshift-auto)"
+  systemctl daemon-reload
+  systemctl enable grub-btrfsd.service
+  if systemctl is-active --quiet grub-btrfsd.service; then
+    systemctl restart grub-btrfsd.service
+  else
+    systemctl start grub-btrfsd.service
   fi
 }
 
@@ -228,13 +267,7 @@ else
   echo ">>> Bewahre vorhandene Watcher-Konfiguration $SYNC_CONFIG auf."
 fi
 
-systemctl daemon-reload
-if systemctl list-unit-files grub-btrfsd.service 2>/dev/null | grep -q '^grub-btrfsd\.service'; then
-  echo ">>> Aktiviere grub-btrfsd"
-  systemctl enable --now grub-btrfsd.service
-else
-  echo "WARNUNG: Keine grub-btrfsd.service-Unit gefunden; der Timeshift-Watcher übernimmt Snapshot-Ereignisse selbst." >&2
-fi
+configure_grub_btrfsd
 
 echo ">>> Erzeuge initiale GRUB-Konfiguration"
 if command -v update-grub >/dev/null 2>&1; then

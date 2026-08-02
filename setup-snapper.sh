@@ -12,6 +12,7 @@ ASSUME_YES=${LAYOUT_SCRIPT_ASSUME_YES:-0}
 TOPLEVEL_MNT=""
 GUARD_SNAPSHOT=""
 APT_UPDATED=0
+GRUB_BTRFSD_DROPIN=/etc/systemd/system/grub-btrfsd.service.d/90-layout-script.conf
 
 cleanup() {
   if [[ -n "$TOPLEVEL_MNT" && -d "$TOPLEVEL_MNT" ]]; then
@@ -77,6 +78,44 @@ require_command() {
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "FEHLER: Benötigtes Kommando '$cmd' fehlt. $hint" >&2
     exit 1
+  fi
+}
+
+configure_grub_btrfsd() {
+  local dropin_dir grub_btrfsd_bin
+
+  grub_btrfsd_bin=$(command -v grub-btrfsd)
+  if ! systemctl list-unit-files grub-btrfsd.service 2>/dev/null | grep -q '^grub-btrfsd\.service'; then
+    echo "FEHLER: grub-btrfsd.service wurde trotz installiertem grub-btrfs nicht gefunden." >&2
+    exit 1
+  fi
+
+  if [[ -d "$GRUB_BTRFSD_DROPIN" || -L "$GRUB_BTRFSD_DROPIN" ]]; then
+    echo "FEHLER: Drop-in-Ziel ist kein verwaltbares normales File: $GRUB_BTRFSD_DROPIN" >&2
+    exit 1
+  fi
+  if [[ -e "$GRUB_BTRFSD_DROPIN" ]] && ! grep -Eq '^# Managed by debian-btrfs/layout-script setup-(snapper|timeshift)\.sh$' "$GRUB_BTRFSD_DROPIN"; then
+    echo "FEHLER: Vorhandenes fremdes grub-btrfsd-Drop-in wird nicht überschrieben: $GRUB_BTRFSD_DROPIN" >&2
+    echo "Bitte das Drop-in prüfen oder entfernen und setup-snapper.sh danach erneut ausführen." >&2
+    exit 1
+  fi
+
+  dropin_dir=$(dirname "$GRUB_BTRFSD_DROPIN")
+  install -d -m 0755 "$dropin_dir"
+  cat > "$GRUB_BTRFSD_DROPIN" <<EOF
+# Managed by debian-btrfs/layout-script setup-snapper.sh
+[Service]
+ExecStart=
+ExecStart=$grub_btrfsd_bin --syslog /.snapshots
+EOF
+
+  echo ">>> Konfiguriere grub-btrfsd für Snapper (überwacht /.snapshots)"
+  systemctl daemon-reload
+  systemctl enable grub-btrfsd.service
+  if systemctl is-active --quiet grub-btrfsd.service; then
+    systemctl restart grub-btrfsd.service
+  else
+    systemctl start grub-btrfsd.service
   fi
 }
 
@@ -174,7 +213,9 @@ create_guard_snapshot() {
   existing_guards=$(btrfs subvolume list "$TOPLEVEL_MNT" | awk '{print $NF}' | grep -- '\.before-snapper-setup-' || true)
   if [[ -n "$existing_guards" ]]; then
     echo ">>> Hinweis: Guard-Snapshot(s) aus früheren Läufen gefunden (werden nicht automatisch gelöscht):"
-    echo "$existing_guards" | sed 's/^/    /'
+    while IFS= read -r guard; do
+      printf '    %s\n' "$guard"
+    done <<< "$existing_guards"
   fi
 
   parent=$(dirname "$ROOT_SUBVOL")
@@ -367,8 +408,7 @@ done
 if [[ "$GRUB_BTRFS_AVAILABLE" == "1" ]]; then
   need_pkg grub-mkconfig grub-common 2>/dev/null || true
   need_pkg grub-btrfsd grub-btrfs
-  echo ">>> Aktiviere grub-btrfsd (beobachtet .snapshots und aktualisiert GRUB automatisch)"
-  systemctl enable --now grub-btrfsd
+  configure_grub_btrfsd
 
   if command -v update-grub >/dev/null 2>&1; then
     echo ">>> update-grub ausführen"

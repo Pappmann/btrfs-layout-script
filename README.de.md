@@ -265,7 +265,7 @@ Auf einem Debian(-basierten) System, dessen `/` bereits auf einem benannten Btrf
 - Setzt eine SUSE-artige Timeline-Policy in `/etc/snapper/configs/root` (`TIMELINE_CREATE`, `TIMELINE_CLEANUP`, `NUMBER_CLEANUP` sowie konservative `TIMELINE_LIMIT_*`-Werte für stündlich/täglich/wöchentlich/monatlich/jährlich).
 - Installiert eigene `apt`-Hooks (`DPkg::Pre-Invoke`/`DPkg::Post-Invoke`), die rund um jede Paketänderung ein Pre-/Post-Snapshot-Paar anlegen — Debian/Ubuntu liefert diese Integration anders als das `zypp`-Plugin von openSUSE nicht mit, weshalb das Skript dafür kleine Wrapper-Skripte schreibt.
 - Aktiviert die systemd-Timer `snapper-timeline.timer` und `snapper-cleanup.timer`.
-- Installiert `grub-btrfs`, falls das Paket in den konfigurierten APT-Quellen verfügbar ist, aktiviert dann `grub-btrfsd` und führt `update-grub` (bzw. `grub-mkconfig`) aus, damit Snapshots als bootbare, read-only-Einträge im GRUB-Menü erscheinen. Ist das Paket nicht verfügbar, läuft die Snapper-Einrichtung ohne GRUB-Menü-Integration weiter.
+- Installiert `grub-btrfs`, falls das Paket in den konfigurierten APT-Quellen verfügbar ist, konfiguriert `grub-btrfsd` für die Überwachung von Snapper-`/.snapshots` und führt `update-grub` (bzw. `grub-mkconfig`) aus, damit Snapshots als bootbare, read-only-Einträge im GRUB-Menü erscheinen. Timeshift ist für diesen Pfad nicht erforderlich. Ist das Paket nicht verfügbar, läuft die Snapper-Einrichtung ohne GRUB-Menü-Integration weiter.
 
 ### Grenzen
 
@@ -302,7 +302,10 @@ Das Skript installiert bei Bedarf folgende Pakete: `snapper`, `inotify-tools`, o
    snapper list-configs
    snapper create -d test && snapper list && snapper delete <Nummer>
    systemctl status snapper-timeline.timer snapper-cleanup.timer grub-btrfsd
+   systemctl cat grub-btrfsd.service
    ```
+
+   Bei einer reinen Snapper-Einrichtung muss der wirksame `ExecStart` `grub-btrfsd --syslog /.snapshots` enthalten und darf nicht `--timeshift-auto` enthalten. `setup-snapper.sh` und `setup-timeshift.sh` verwalten dasselbe Drop-in; das Skript für den ausgewählten Snapshot-Manager ausführen.
 
    Ein kleines Paket installieren/entfernen, um zu prüfen, dass die `apt`-Hooks ein Pre-/Post-Snapshot-Paar erzeugen, und neu starten, um zu prüfen, dass das GRUB-Menü ein Snapshot-Untermenü zeigt.
 
