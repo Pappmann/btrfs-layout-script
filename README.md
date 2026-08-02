@@ -212,7 +212,7 @@ At this point, Timeshift can use `@` as the root subvolume and your layout is re
 
 - Verifies that `/` runs from a named Btrfs subvolume and that Timeshift is configured in Btrfs mode with a backup device.
 - Creates a read-only guard snapshot before changing the system.
-- Installs `timeshift`, `grub-btrfs`, and `inotify-tools` when needed.
+- Installs `timeshift` and `inotify-tools` when needed, and reuses a complete manual `grub-btrfs` installation when the package is not available through APT.
 - Enables `grub-btrfsd` where the package provides the service and creates the initial GRUB configuration.
 - Installs `timeshift-grub-btrfs-sync.service`. The watcher detects new and deleted snapshots as well as `info.json` writes and renames, so a comment saved after a Timeshift GUI snapshot triggers another GRUB update.
 - Keeps the setup idempotent and does not reboot the machine automatically.

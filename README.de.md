@@ -213,7 +213,7 @@ Damit ist das Layout für Timeshift und Container-Workloads vorbereitet.
 
 - Prüft, dass `/` von einem benannten Btrfs-Subvolume läuft und Timeshift im Btrfs-Modus mit ausgewähltem Backup-Gerät konfiguriert ist.
 - Erstellt vor Änderungen einen read-only Guard-Snapshot.
-- Installiert bei Bedarf `timeshift`, `grub-btrfs` und `inotify-tools`.
+- Installiert bei Bedarf `timeshift` und `inotify-tools` und verwendet eine vollständige manuelle `grub-btrfs`-Installation weiter, wenn das Paket über APT nicht verfügbar ist.
 - Aktiviert `grub-btrfsd`, sofern das Paket die Unit bereitstellt, und erzeugt die initiale GRUB-Konfiguration.
 - Installiert `timeshift-grub-btrfs-sync.service`. Der Watcher erkennt neue und gelöschte Snapshots sowie Schreib- und Umbenennungsereignisse an `info.json`. Dadurch löst auch ein nachträglich in der Timeshift-GUI gespeicherter Kommentar eine GRUB-Aktualisierung aus.
 - Ist idempotent und startet den Rechner nicht automatisch neu.

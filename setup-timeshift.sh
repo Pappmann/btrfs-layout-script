@@ -102,6 +102,12 @@ package_installed() {
   dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
 }
 
+grub_btrfs_present() {
+  command -v grub-btrfsd >/dev/null 2>&1 &&
+    [[ -x /etc/grub.d/41_snapshots-btrfs ]] &&
+    [[ -r /etc/default/grub-btrfs/config ]]
+}
+
 ensure_apt_updated() {
   if [[ "$APT_UPDATED" != "1" ]]; then
     echo ">>> Aktualisiere APT-Paketindex"
@@ -169,6 +175,10 @@ echo ">>> Timeshift-Konfiguration: $TIMESHIFT_CONFIG"
 
 ensure_apt_updated
 for package_name in timeshift grub-btrfs inotify-tools; do
+  if [[ "$package_name" == "grub-btrfs" ]] && grub_btrfs_present; then
+    echo ">>> Vorhandene manuelle grub-btrfs-Installation wird wiederverwendet."
+    continue
+  fi
   if ! package_installed "$package_name" && ! apt_package_available "$package_name"; then
     echo "FEHLER: Paket '$package_name' ist nicht installiert und nicht verfügbar." >&2
     exit 1
