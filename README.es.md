@@ -214,6 +214,7 @@ En este punto, Timeshift puede usar `@` como subvolumen root y tu diseño está 
 - Comprueba que `/` se ejecute desde un subvolumen Btrfs con nombre y que Timeshift esté configurado en modo Btrfs con un dispositivo de backup.
 - Crea una instantánea guardia read-only antes de modificar el sistema.
 - Instala `timeshift` e `inotify-tools` cuando sea necesario y reutiliza una instalación manual completa de `grub-btrfs` si el paquete no está disponible mediante APT.
+- Corrige el comportamiento conocido del analizador de `grub-btrfs` que elimina las comas de los comentarios de Timeshift; el generador original se guarda en `/var/lib/btrfs-layout/`.
 - Activa `grub-btrfsd` si el paquete proporciona la unidad y genera la configuración inicial de GRUB.
 - Instala `timeshift-grub-btrfs-sync.service`. El watcher detecta snapshots nuevos/eliminados y escrituras o renombrados de `info.json`; por eso un comentario guardado después de crear un snapshot en la GUI también actualiza GRUB.
 - Es idempotente y no reinicia el equipo automáticamente.

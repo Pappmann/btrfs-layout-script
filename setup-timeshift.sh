@@ -11,6 +11,8 @@ SYNC_CONFIG=/etc/default/timeshift-grub-btrfs-sync
 SYNC_UNIT=/etc/systemd/system/timeshift-grub-btrfs-sync.service
 SYNC_HELPER=/usr/local/sbin/timeshift-grub-btrfs-sync.sh
 GRUB_BTRFSD_DROPIN=/etc/systemd/system/grub-btrfsd.service.d/90-layout-script.conf
+GRUB_BTRFS_GENERATOR=/etc/grub.d/41_snapshots-btrfs
+GRUB_BTRFS_GENERATOR_BACKUP=/var/lib/btrfs-layout/41_snapshots-btrfs.before-comments-patch
 
 usage() {
   cat <<'EOF'
@@ -87,6 +89,40 @@ EOF
     systemctl restart grub-btrfsd.service
   else
     systemctl start grub-btrfsd.service
+  fi
+}
+
+# shellcheck disable=SC2016
+patch_grub_btrfs_comment_parser() {
+  local temp_file
+
+  if [[ ! -x "$GRUB_BTRFS_GENERATOR" ]]; then
+    echo "FEHLER: grub-btrfs-Generator fehlt oder ist nicht ausführbar: $GRUB_BTRFS_GENERATOR" >&2
+    exit 1
+  fi
+
+  if grep -Fq 'gsub(/"|,/,"")' "$GRUB_BTRFS_GENERATOR"; then
+    echo ">>> Korrigiere grub-btrfs-Kommentarparser: Kommas in Timeshift-Kommentaren bleiben erhalten."
+    if [[ ! -e "$GRUB_BTRFS_GENERATOR_BACKUP" ]]; then
+      install -D -m 0755 "$GRUB_BTRFS_GENERATOR" "$GRUB_BTRFS_GENERATOR_BACKUP"
+      echo ">>> Originalparser gesichert: $GRUB_BTRFS_GENERATOR_BACKUP"
+    else
+      echo ">>> Bewahre vorhandene Parser-Sicherung: $GRUB_BTRFS_GENERATOR_BACKUP"
+    fi
+
+    temp_file=$(mktemp "${GRUB_BTRFS_GENERATOR}.tmp.XXXXXX")
+    if ! sed 's#gsub(/"|,/,"")#gsub(/"/,"",$2); sub(/,[[:space:]]*$/, "", $2)#' \
+      "$GRUB_BTRFS_GENERATOR" > "$temp_file"; then
+      rm -f "$temp_file"
+      echo "FEHLER: grub-btrfs-Kommentarparser konnte nicht gepatcht werden." >&2
+      exit 1
+    fi
+    chmod --reference="$GRUB_BTRFS_GENERATOR" "$temp_file"
+    mv "$temp_file" "$GRUB_BTRFS_GENERATOR"
+  elif grep -Fq 'sub(/,[[:space:]]*$/, "", $2)' "$GRUB_BTRFS_GENERATOR"; then
+    echo ">>> grub-btrfs-Kommentarparser ist bereits komma-sicher."
+  else
+    echo ">>> Keine bekannte Komma-entfernende grub-btrfs-Parserzeile gefunden; Generator wird unverändert verwendet."
   fi
 }
 
@@ -247,6 +283,7 @@ need_pkg inotifywait inotify-tools
 if ! command -v update-grub >/dev/null 2>&1 && ! command -v grub-mkconfig >/dev/null 2>&1; then
   need_pkg grub-mkconfig grub-common
 fi
+patch_grub_btrfs_comment_parser
 
 if [[ ! -f "$TIMESHIFT_CONFIG" ]]; then
   echo "FEHLER: $TIMESHIFT_CONFIG fehlt." >&2
