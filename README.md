@@ -3,7 +3,7 @@
 Three scripts that turn a Debian, Ubuntu, or other Debian-based server into a well-organized, snapshot-ready Btrfs system:
 
 - **`setup-btrfs.sh`** — migrates a single Btrfs root partition into a clean subvolume layout, ready for Timeshift and container workloads.
-- **`setup-timeshift.sh`** — installs and connects Timeshift with `grub-btrfs`, including automatic GRUB regeneration after a GUI comment is saved.
+- **`setup-timeshift.sh`** — installs and connects Timeshift with `grub-btrfs`, including automatic GRUB regeneration when the GUI closes after a comment is saved.
 - **`setup-snapper.sh`** — once root runs from a named subvolume, adds a SUSE-style Snapper setup on top: timeline snapshots, snapshots around every `apt` change, and GRUB-bootable snapshots via `grub-btrfs`.
 
 Run `setup-btrfs.sh` first; `setup-timeshift.sh` and `setup-snapper.sh` both require a named root subvolume and will tell you to run it first if that's not the case yet.
@@ -214,8 +214,9 @@ At this point, Timeshift can use `@` as the root subvolume and your layout is re
 - Creates a read-only guard snapshot before changing the system.
 - Installs `timeshift` and `inotify-tools` when needed, and reuses a complete manual `grub-btrfs` installation when the package is not available through APT.
 - Patches the known `grub-btrfs` parser behavior that strips commas from Timeshift comments; the original generator is backed up under `/var/lib/btrfs-layout/`.
-- Enables `grub-btrfsd` where the package provides the service and creates the initial GRUB configuration.
-- Installs `timeshift-grub-btrfs-sync.service`. The watcher detects new and deleted snapshots as well as `info.json` writes and renames, so a comment saved after a Timeshift GUI snapshot triggers another GRUB update.
+- Enables the event-driven `grub-btrfsd` service for new, deleted, and scheduled snapshots and creates the initial GRUB configuration.
+- Installs a managed `/usr/local/bin/timeshift-launcher`. It uses the existing Timeshift authentication flow, waits for the GUI to close, and then refreshes the GRUB snapshot menu once so subsequently saved comments are included without polling.
+- Disables the legacy `timeshift-grub-btrfs-sync.service` when upgrading an existing installation.
 - Keeps the setup idempotent and does not reboot the machine automatically.
 
 ### Requirements
@@ -241,12 +242,13 @@ sudo LAYOUT_SCRIPT_ASSUME_YES=1 ./setup-timeshift.sh
 Verify the integration with:
 
 ```bash
-systemctl status grub-btrfsd timeshift-grub-btrfs-sync.service
+systemctl status grub-btrfsd
+command -v timeshift-launcher
 grub-script-check /boot/grub/grub.cfg
 grep -n 'Description' /boot/grub/grub-btrfs.cfg
 ```
 
-Create a snapshot with `timeshift --create --comments "after update"`, or create one in the GUI and save a comment afterwards. The watcher regenerates the GRUB snapshot menu after the metadata change. GRUB boots snapshots read-only; this setup is not an automatic system rollback mechanism.
+Create a snapshot with `timeshift --create --comments "after update"`, or create one in the GUI and save a comment afterwards. For GUI snapshots, close Timeshift after saving the comment; the launcher then regenerates the GRUB snapshot menu once. Directly starting `/usr/bin/timeshift-gtk` bypasses this post-GUI refresh. GRUB boots snapshots read-only; this setup is not an automatic system rollback mechanism.
 
 ## setup-snapper.sh
 

@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Managed by debian-btrfs/layout-script setup-timeshift.sh
+
+TIMESHIFT_GTK=/usr/bin/timeshift-gtk
+GRUB_BTRFS_GENERATOR=/etc/grub.d/41_snapshots-btrfs
+GRUB_BTRFS_MENU=/boot/grub/grub-btrfs.cfg
+SYSTEMCTL=/usr/bin/systemctl
+GRUB_SCRIPT_CHECK=/usr/bin/grub-script-check
+LOCK_FILE=/run/lock/timeshift-grub-btrfs-launcher.lock
+SELF_PATH=/usr/local/bin/timeshift-launcher
+TEST_MODE=0
+DAEMON_WAS_ACTIVE=0
+
+if [[ $EUID -ne 0 && ${TIMESHIFT_LAUNCHER_TEST_MODE:-0} == 1 ]]; then
+  TEST_MODE=1
+  TIMESHIFT_GTK=${TIMESHIFT_LAUNCHER_TEST_GTK:?}
+  GRUB_BTRFS_GENERATOR=${TIMESHIFT_LAUNCHER_TEST_GENERATOR:?}
+  GRUB_BTRFS_MENU=${TIMESHIFT_LAUNCHER_TEST_MENU:?}
+  SYSTEMCTL=${TIMESHIFT_LAUNCHER_TEST_SYSTEMCTL:?}
+  GRUB_SCRIPT_CHECK=${TIMESHIFT_LAUNCHER_TEST_SCRIPT_CHECK:?}
+  LOCK_FILE=${TIMESHIFT_LAUNCHER_TEST_LOCK:?}
+fi
+
+log() {
+  local message="$1"
+
+  printf 'timeshift-launcher: %s\n' "$message" >&2
+  if [[ $TEST_MODE == 0 ]] && command -v logger >/dev/null 2>&1; then
+    logger -t timeshift-grub-btrfs-launcher "$message" || true
+  fi
+}
+
+restore_grub_btrfsd() {
+  if [[ $DAEMON_WAS_ACTIVE == 1 ]]; then
+    if "$SYSTEMCTL" start grub-btrfsd.service; then
+      DAEMON_WAS_ACTIVE=0
+      log "grub-btrfsd wieder gestartet"
+    else
+      log "FEHLER: grub-btrfsd konnte nicht wieder gestartet werden"
+      return 1
+    fi
+  fi
+}
+
+refresh_grub_snapshot_menu() {
+  local lock_fd refresh_status=0
+
+  mkdir -p "$(dirname "$LOCK_FILE")"
+  exec {lock_fd}>"$LOCK_FILE"
+  if ! flock -w 60 "$lock_fd"; then
+    log "FEHLER: GRUB-Sperre konnte nicht erhalten werden"
+    exec {lock_fd}>&-
+    return 1
+  fi
+
+  if "$SYSTEMCTL" is-active --quiet grub-btrfsd.service; then
+    DAEMON_WAS_ACTIVE=1
+    if ! "$SYSTEMCTL" stop grub-btrfsd.service; then
+      log "FEHLER: grub-btrfsd konnte vor der GRUB-Aktualisierung nicht gestoppt werden"
+      exec {lock_fd}>&-
+      return 1
+    fi
+  fi
+
+  if [[ ! -x $GRUB_BTRFS_GENERATOR ]]; then
+    log "FEHLER: grub-btrfs-Generator fehlt oder ist nicht ausführbar: $GRUB_BTRFS_GENERATOR"
+    refresh_status=1
+  elif ! "$GRUB_BTRFS_GENERATOR" >/dev/null; then
+    log "FEHLER: grub-btrfs-Snapshot-Menü konnte nicht aktualisiert werden"
+    refresh_status=1
+  elif [[ ! -s $GRUB_BTRFS_MENU ]]; then
+    log "FEHLER: erzeugtes GRUB-Snapshot-Menü fehlt oder ist leer: $GRUB_BTRFS_MENU"
+    refresh_status=1
+  elif [[ -x $GRUB_SCRIPT_CHECK ]] && ! "$GRUB_SCRIPT_CHECK" "$GRUB_BTRFS_MENU"; then
+    log "FEHLER: erzeugtes GRUB-Snapshot-Menü ist syntaktisch ungültig"
+    refresh_status=1
+  else
+    log "GRUB-Snapshot-Menü nach dem Schließen von Timeshift aktualisiert"
+  fi
+
+  if ! restore_grub_btrfsd; then
+    refresh_status=1
+  fi
+
+  exec {lock_fd}>&-
+  return "$refresh_status"
+}
+
+run_privileged() {
+  local gui_status=0 refresh_status=0
+
+  trap 'restore_grub_btrfsd || true' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  "$TIMESHIFT_GTK" || gui_status=$?
+  refresh_grub_snapshot_menu || refresh_status=$?
+
+  if [[ $gui_status -ne 0 ]]; then
+    return "$gui_status"
+  fi
+  return "$refresh_status"
+}
+
+run_unprivileged() {
+  local launch_status=0
+
+  if [[ -t 0 ]]; then
+    exec su - -c "$SELF_PATH"
+  fi
+
+  if [[ ${XDG_SESSION_TYPE:-} == wayland ]]; then
+    xhost +SI:localuser:root >/dev/null
+    pkexec "$SELF_PATH" || launch_status=$?
+    xhost -SI:localuser:root >/dev/null || true
+    return "$launch_status"
+  fi
+
+  if command -v pkexec >/dev/null 2>&1; then
+    exec pkexec "$SELF_PATH"
+  elif command -v sudo >/dev/null 2>&1; then
+    exec x-terminal-emulator -e "sudo $SELF_PATH"
+  elif command -v su >/dev/null 2>&1; then
+    exec x-terminal-emulator -e "su - -c '$SELF_PATH'"
+  else
+    exec x-terminal-emulator -e \
+      "echo 'Command must be run as root user: $SELF_PATH'; read -r"
+  fi
+}
+
+if [[ $EUID -eq 0 || $TEST_MODE == 1 ]]; then
+  run_privileged
+else
+  run_unprivileged
+fi

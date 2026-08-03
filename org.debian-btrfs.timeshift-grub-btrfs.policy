@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <!-- Managed by debian-btrfs/layout-script setup-timeshift.sh -->
+  <vendor>debian-btrfs</vendor>
+  <vendor_url>https://github.com/debian-btrfs/layout-script</vendor_url>
+  <action id="org.debian-btrfs.timeshift-grub-btrfs.launch">
+    <message>Authentication is required to run Timeshift and update its GRUB snapshot menu</message>
+    <description>Run Timeshift and refresh the GRUB Btrfs snapshot menu when it closes</description>
+    <icon_name>timeshift</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/timeshift-launcher</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>

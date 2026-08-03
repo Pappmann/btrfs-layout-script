@@ -3,7 +3,7 @@
 Tres scripts que convierten un servidor Debian, Ubuntu u otra distribución basada en Debian en un sistema Btrfs bien organizado y listo para instantáneas:
 
 - **`setup-btrfs.sh`** — migra una única partición root en Btrfs a una estructura clara de subvolúmenes, lista para Timeshift y cargas de trabajo con contenedores.
-- **`setup-timeshift.sh`** — instala y conecta Timeshift con `grub-btrfs`, incluida la regeneración automática de GRUB después de guardar un comentario desde la GUI.
+- **`setup-timeshift.sh`** — instala y conecta Timeshift con `grub-btrfs`, incluida la regeneración automática de GRUB al cerrar la GUI después de guardar un comentario.
 - **`setup-snapper.sh`** — una vez que root se ejecuta desde un subvolumen con nombre, añade encima una configuración de Snapper al estilo SUSE: instantáneas de línea de tiempo, instantáneas alrededor de cada cambio de `apt` e instantáneas arrancables desde GRUB mediante `grub-btrfs`.
 
 Ejecuta primero `setup-btrfs.sh`; `setup-timeshift.sh` y `setup-snapper.sh` requieren un subvolumen root con nombre y te lo indicarán si aún no es el caso.
@@ -215,8 +215,9 @@ En este punto, Timeshift puede usar `@` como subvolumen root y tu diseño está 
 - Crea una instantánea guardia read-only antes de modificar el sistema.
 - Instala `timeshift` e `inotify-tools` cuando sea necesario y reutiliza una instalación manual completa de `grub-btrfs` si el paquete no está disponible mediante APT.
 - Corrige el comportamiento conocido del analizador de `grub-btrfs` que elimina las comas de los comentarios de Timeshift; el generador original se guarda en `/var/lib/btrfs-layout/`.
-- Activa `grub-btrfsd` si el paquete proporciona la unidad y genera la configuración inicial de GRUB.
-- Instala `timeshift-grub-btrfs-sync.service`. El watcher detecta snapshots nuevos/eliminados y escrituras o renombrados de `info.json`; por eso un comentario guardado después de crear un snapshot en la GUI también actualiza GRUB.
+- Activa el servicio basado en eventos `grub-btrfsd` para snapshots nuevos, eliminados y programados, y genera la configuración inicial de GRUB.
+- Instala un `/usr/local/bin/timeshift-launcher` administrado. Usa la autenticación existente de Timeshift, espera a que se cierre la GUI y luego actualiza una vez el menú de snapshots de GRUB para incluir comentarios guardados posteriormente sin sondeo periódico.
+- Desactiva el antiguo `timeshift-grub-btrfs-sync.service` al actualizar una instalación existente.
 - Es idempotente y no reinicia el equipo automáticamente.
 
 ### Requisitos
@@ -242,12 +243,13 @@ sudo LAYOUT_SCRIPT_ASSUME_YES=1 ./setup-timeshift.sh
 Verifica la integración con:
 
 ```bash
-systemctl status grub-btrfsd timeshift-grub-btrfs-sync.service
+systemctl status grub-btrfsd
+command -v timeshift-launcher
 grub-script-check /boot/grub/grub.cfg
 grep -n 'Description' /boot/grub/grub-btrfs.cfg
 ```
 
-Crea un snapshot con `timeshift --create --comments "after update"`, o créalo desde la GUI y guarda después un comentario. El watcher regenera el menú de snapshots de GRUB tras el cambio de metadatos. GRUB arranca los snapshots en modo solo lectura; esto no implementa un rollback automático del sistema.
+Crea un snapshot con `timeshift --create --comments "after update"`, o créalo desde la GUI y guarda después un comentario. Para snapshots de la GUI, cierra Timeshift después de guardar el comentario; el launcher regenera entonces una vez el menú de snapshots de GRUB. Iniciar directamente `/usr/bin/timeshift-gtk` omite este paso posterior. GRUB arranca los snapshots en modo solo lectura; esto no implementa un rollback automático del sistema.
 
 ## setup-snapper.sh
 

@@ -7,9 +7,9 @@ TOPLEVEL_MNT=""
 GUARD_SNAPSHOT=""
 APT_UPDATED=0
 TIMESHIFT_CONFIG=/etc/timeshift/timeshift.json
-SYNC_CONFIG=/etc/default/timeshift-grub-btrfs-sync
-SYNC_UNIT=/etc/systemd/system/timeshift-grub-btrfs-sync.service
-SYNC_HELPER=/usr/local/sbin/timeshift-grub-btrfs-sync.sh
+LEGACY_SYNC_UNIT=timeshift-grub-btrfs-sync.service
+TIMESHIFT_LAUNCHER=/usr/local/bin/timeshift-launcher
+TIMESHIFT_LAUNCHER_POLICY=/usr/share/polkit-1/actions/org.debian-btrfs.timeshift-grub-btrfs.policy
 GRUB_BTRFSD_DROPIN=/etc/systemd/system/grub-btrfsd.service.d/90-layout-script.conf
 GRUB_BTRFS_GENERATOR=/etc/grub.d/41_snapshots-btrfs
 GRUB_BTRFS_GENERATOR_BACKUP=/var/lib/btrfs-layout/41_snapshots-btrfs.before-comments-patch
@@ -92,6 +92,44 @@ EOF
   fi
 }
 
+install_timeshift_launcher() {
+  local marker='Managed by debian-btrfs/layout-script setup-timeshift.sh'
+  local source_launcher="$SCRIPT_DIR/timeshift-launcher"
+  local source_policy="$SCRIPT_DIR/org.debian-btrfs.timeshift-grub-btrfs.policy"
+  local target
+
+  for target in "$TIMESHIFT_LAUNCHER" "$TIMESHIFT_LAUNCHER_POLICY"; do
+    if [[ -d "$target" || -L "$target" ]]; then
+      echo "FEHLER: Launcher-Ziel ist kein verwaltbares normales File: $target" >&2
+      exit 1
+    fi
+    if [[ -e "$target" ]] && ! grep -Fq "$marker" "$target"; then
+      echo "FEHLER: Vorhandene fremde Datei wird nicht überschrieben: $target" >&2
+      echo "Bitte die Datei prüfen oder verschieben und setup-timeshift.sh danach erneut ausführen." >&2
+      exit 1
+    fi
+  done
+
+  install -D -m 0755 "$source_launcher" "$TIMESHIFT_LAUNCHER"
+  install -D -m 0644 "$source_policy" "$TIMESHIFT_LAUNCHER_POLICY"
+  echo ">>> Installiere Timeshift-Launcher mit GRUB-Nachlauf: $TIMESHIFT_LAUNCHER"
+}
+
+disable_legacy_sync_watcher() {
+  local load_state
+
+  load_state=$(systemctl show "$LEGACY_SYNC_UNIT" -p LoadState --value 2>/dev/null || true)
+  if [[ $load_state == loaded ]]; then
+    echo ">>> Deaktiviere den nicht mehr benötigten Timeshift-Zusatz-Watcher."
+    systemctl disable "$LEGACY_SYNC_UNIT"
+    systemctl stop "$LEGACY_SYNC_UNIT"
+    if systemctl is-active --quiet "$LEGACY_SYNC_UNIT"; then
+      echo "FEHLER: $LEGACY_SYNC_UNIT läuft trotz Stop-Anforderung weiter." >&2
+      exit 1
+    fi
+  fi
+}
+
 # shellcheck disable=SC2016
 patch_grub_btrfs_comment_parser() {
   local temp_file
@@ -126,7 +164,7 @@ patch_grub_btrfs_comment_parser() {
   fi
 }
 
-for command_name in apt-get apt-cache awk blkid btrfs findmnt grep mount mktemp sed systemctl umount; do
+for command_name in apt-get apt-cache awk blkid btrfs findmnt flock grep install mount mktemp sed systemctl umount; do
   require_command "$command_name" "Bitte die passenden Debian-Systemwerkzeuge installieren."
 done
 
@@ -224,8 +262,8 @@ done
 echo
 echo "!!! ACHTUNG !!!"
 echo "Dieses Skript erstellt einen read-only Guard-Snapshot und installiert"
-echo "Timeshift/grub-btrfs samt einem systemd-Watcher für nachträgliche"
-echo "Timeshift-Kommentaränderungen. Vorhandene Timeshift-Geräte und Zeitpläne"
+echo "Timeshift/grub-btrfs samt einem lokalen GUI-Launcher, der nach dem"
+echo "Schließen Timeshift-Kommentare in GRUB übernimmt. Vorhandene Geräte und Zeitpläne"
 echo "werden nicht überschrieben; ein Neustart wird nicht automatisch ausgelöst."
 echo
 confirm_or_abort
@@ -301,19 +339,8 @@ if ! grep -Eq '"backup_device_uuid"[[:space:]]*:[[:space:]]*"[^"]+"' "$TIMESHIFT
   exit 1
 fi
 
-install -D -m 0755 "$SCRIPT_DIR/timeshift-grub-btrfs-sync.sh" "$SYNC_HELPER"
-install -D -m 0644 "$SCRIPT_DIR/timeshift-grub-btrfs-sync.service" "$SYNC_UNIT"
-
-if [[ ! -e "$SYNC_CONFIG" ]]; then
-  install -D -m 0644 /dev/null "$SYNC_CONFIG"
-  printf '%s\n%s\n%s\n' \
-    '# Managed by debian-btrfs/layout-script setup-timeshift.sh' \
-    'TIMESHIFT_WATCH_ROOT=/run/timeshift' \
-    'TIMESHIFT_EVENT_DELAY=3' > "$SYNC_CONFIG"
-else
-  echo ">>> Bewahre vorhandene Watcher-Konfiguration $SYNC_CONFIG auf."
-fi
-
+install_timeshift_launcher
+disable_legacy_sync_watcher
 configure_grub_btrfsd
 
 echo ">>> Erzeuge initiale GRUB-Konfiguration"
@@ -328,8 +355,6 @@ else
   fi
   grub-mkconfig -o "$grub_dir/grub.cfg"
 fi
-
-systemctl enable --now timeshift-grub-btrfs-sync.service
 
 grub_dir=/boot/grub
 if [[ -r /etc/default/grub-btrfs/config ]]; then
@@ -354,7 +379,8 @@ fi
 echo
 echo ">>> FERTIG."
 echo "Guard-Snapshot: $GUARD_SNAPSHOT"
-echo "Watcher: systemctl status timeshift-grub-btrfs-sync.service"
+echo "Timeshift-Launcher: $TIMESHIFT_LAUNCHER"
+echo "Watcher: systemctl status grub-btrfsd.service"
 echo "GRUB-Prüfung: grep -n 'Description' $grub_dir/grub-btrfs.cfg"
-echo "Der nächste Timeshift-Snapshot sowie nachträglich gespeicherte Kommentare"
-echo "lösen automatisch eine neue grub-btrfs-Konfiguration aus."
+echo "Neue Snapshots aktualisiert grub-btrfsd automatisch. Beim Schließen der"
+echo "Timeshift-GUI übernimmt der lokale Launcher nachträglich gespeicherte Kommentare."
